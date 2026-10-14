@@ -1,0 +1,17 @@
+/* Foundation readability only; accepted Phase 3 design tokens follow in PR 3. */
+:root {
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  color: #202020;
+  background: #fafafa;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 48rem;
+  margin-inline: auto;
+  padding: 2rem 1rem;
+}
