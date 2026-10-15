@@ -18,7 +18,6 @@ import {
   assertProductionGate,
   projectConfiguration,
   assertDeployment,
-  promotionEvidence,
   staticHostingConfiguration,
 } from '../../scripts/delivery-contract.mjs';
 
@@ -41,13 +40,11 @@ async function withController(scenario, run) {
     GITHUB_REF: 'refs/heads/main',
     GH_TOKEN: 'synthetic-github',
     VERCEL_TOKEN: 'synthetic-vercel',
-    VERCEL_DEV_VERIFICATION_TOKEN: 'synthetic-dev-verification',
     DELIVERY_ENABLED: 'true',
     PRODUCTION_DELIVERY_ENABLED: production ? 'true' : 'false',
     DELIVERY_REVISION: 'a'.repeat(40),
     DELIVERY_TARGET: production ? 'production' : 'dev',
     DELIVERY_AUTOMATIC: production ? 'false' : 'true',
-    PROMOTION_EVIDENCE: '',
     VERCEL_TEAM_ID: 'team_test',
     VERCEL_DEV_PROJECT_ID: 'prj_dev',
     VERCEL_PRODUCTION_PROJECT_ID: 'prj_production',
@@ -55,7 +52,8 @@ async function withController(scenario, run) {
     GITHUB_STEP_SUMMARY: join(directory, 'summary.md'),
     GITHUB_OUTPUT: join(directory, 'output.txt'),
     GITHUB_EVENT_PATH: join(directory, 'event.json'),
-    GITHUB_EVENT_NAME: 'workflow_run',
+    GITHUB_EVENT_NAME: production ? 'workflow_dispatch' : 'workflow_run',
+    GITHUB_RUN_ATTEMPT: '1',
   };
   const previous = Object.fromEntries(
     Object.keys(settings).map((key) => [key, process.env[key]]),
@@ -107,34 +105,6 @@ async function withController(scenario, run) {
     'team_test',
     'prj_production',
   );
-  const evidence = {
-    candidate: {
-      ...candidateIdentity,
-      deploymentId: 'dpl_candidate',
-      configDigest: devConfig,
-    },
-    recovery: {
-      ...recoveryIdentity,
-      devDeploymentId: 'dpl_recovery',
-      configDigest: devConfig,
-      restoredCandidateDeploymentId: 'dpl_candidate',
-      rehearsalRunUrl:
-        'https://github.com/benhammoush/Dripperz/actions/runs/80',
-    },
-    production: {
-      ...priorIdentity,
-      deploymentId: 'dpl_prior',
-      configDigest: prodConfig,
-    },
-    acceptance: {
-      reviewer: 'benhammoush',
-      at:
-        scenario === 'production-early-acceptance'
-          ? '2025-01-01T00:00:00Z'
-          : '2026-01-02T00:00:00Z',
-      runUrl: 'https://github.com/benhammoush/Dripperz/actions/runs/90',
-    },
-  };
   const existing = Object.fromEntries(
     [
       ['dpl_candidate', candidateIdentity, 'prj_dev', devConfig],
@@ -158,7 +128,6 @@ async function withController(scenario, run) {
   try {
     process.chdir(directory);
     Object.assign(process.env, settings);
-    process.env.PROMOTION_EVIDENCE = JSON.stringify(evidence);
     await mkdir('dist');
     for (const [name, data] of staticFiles)
       await writeFile(`dist/${name}`, data);
@@ -206,11 +175,8 @@ async function withController(scenario, run) {
           production &&
           (url.pathname.startsWith('/v9/projects/prj_dev') ||
             /\/v13\/deployments\/dpl_(candidate|recovery)$/.test(url.pathname));
-        assert.equal(
-          options.headers.Authorization,
-          `Bearer ${devRead ? 'synthetic-dev-verification' : 'synthetic-vercel'}`,
-        );
-        if (devRead) assert.equal(options.method, 'GET');
+        assert.equal(options.headers.Authorization, 'Bearer synthetic-vercel');
+        assert.equal(devRead, false, 'Production must not read dev resources');
         if (url.pathname === '/v9/projects/prj_dev/domains')
           result = fixture.domains;
         else if (url.pathname === '/v9/projects/prj_dev') {
@@ -347,6 +313,25 @@ test('controller selects trusted successful main push CI with built-in authentic
   });
 });
 
+test('manual selection uses the shared target and exact sha inputs', async () => {
+  await withController('success', async ({ directory }) => {
+    process.env.GITHUB_EVENT_NAME = 'workflow_dispatch';
+    await writeFile(
+      join(directory, 'event.json'),
+      JSON.stringify({ inputs: { target: 'dev', sha: 'a'.repeat(40) } }),
+    );
+    await select();
+    assert.match(
+      await readFile(join(directory, 'output.txt'), 'utf8'),
+      /automatic=false/,
+    );
+    assert.match(
+      await readFile(join(directory, 'output.txt'), 'utf8'),
+      /revision=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/,
+    );
+  });
+});
+
 test('controller rejects stale automatic, unmerged, drifted, tampered and disabled deliveries before POST', async () => {
   for (const scenario of [
     'superseded',
@@ -366,6 +351,7 @@ test('controller rejects stale automatic, unmerged, drifted, tampered and disabl
         delete process.env.VERCEL_DEV_PROJECT_ID;
       if (scenario === 'missing-github') delete process.env.GH_TOKEN;
       if (scenario === 'production-disabled') {
+        process.env.GITHUB_EVENT_NAME = 'workflow_dispatch';
         process.env.DELIVERY_TARGET = 'production';
         const identity = JSON.parse(
           await readFile('dist/delivery.json', 'utf8'),
@@ -456,7 +442,7 @@ test('successful controller uses one POST and retains exact immutable and prior 
   });
 });
 
-test('actual production controller validates restored candidate and recovery before its single POST', async () => {
+test('production uses only its target credential; acceptance and recovery are owner-reviewed', async () => {
   await withController(
     'production-success',
     async ({ requests, directory }) => {
@@ -468,36 +454,28 @@ test('actual production controller validates restored candidate and recovery bef
         await readFile(join(directory, 'delivery-record.json'), 'utf8'),
       );
       assert.equal(record.priorDeploymentId, 'dpl_prior');
-      assert.equal(record.acceptedDevDeploymentId, 'dpl_candidate');
-      assert.equal(record.promotion.acceptance.reviewer, 'benhammoush');
+      assert.equal(record.promotion, undefined);
+      assert.ok(
+        requests.every((request) => !request.url.includes('/projects/prj_dev')),
+      );
     },
   );
 });
 
-test('production controller rejects stale acceptance/recovery, run identity, empty production, late drift and missing dev credentials before POST', async () => {
+test('production rejects empty bootstrap, reruns and non-dispatch execution before POST', async () => {
   for (const scenario of [
-    'production-candidate-drift',
-    'production-recovery-mismatch',
-    'production-prior-mismatch',
-    'production-early-acceptance',
-    'production-run-mismatch',
     'production-empty',
-    'production-late-dev-drift',
-    'production-missing-dev-credential',
+    'production-rerun',
+    'production-push',
   ]) {
     await withController(scenario, async ({ requests }) => {
-      if (scenario === 'production-missing-dev-credential')
-        delete process.env.VERCEL_DEV_VERIFICATION_TOKEN;
+      if (scenario === 'production-rerun') process.env.GITHUB_RUN_ATTEMPT = '2';
+      if (scenario === 'production-push')
+        process.env.GITHUB_EVENT_NAME = 'push';
       const expected = {
-        'production-candidate-drift': /recovery or configuration drifted/,
-        'production-recovery-mismatch': /recorded READY/,
-        'production-prior-mismatch': /recorded READY/,
-        'production-early-acceptance': /Acceptance predates/,
-        'production-run-mismatch': /Hosted identity differs/,
-        'production-empty': /recovery or configuration drifted/,
-        'production-late-dev-drift': /Dev acceptance invalidated/,
-        'production-missing-dev-credential':
-          /Missing VERCEL_DEV_VERIFICATION_TOKEN/,
+        'production-empty': /bootstrap\/recovery policy/,
+        'production-rerun': /new manual dispatch/,
+        'production-push': /new manual dispatch/,
       };
       await assert.rejects(deploy, expected[scenario]);
       assert.equal(
@@ -755,40 +733,9 @@ test('provider READY state must match project, target, source, version and both 
   }
 });
 
-test('promotion requires exact rebuilt candidate, explicit acceptance and both recovery records', () => {
-  const identity = {
-    revision: 'a'.repeat(40),
-    version: '0.1.0',
-    bundleDigest: 'bundle',
-  };
-  const evidence = {
-    candidate: { ...identity, deploymentId: 'dpl_candidate' },
-    acceptance: {
-      reviewer: 'benhammoush',
-      at: '2026-01-01T00:00:00Z',
-      runUrl: 'https://github.com/benhammoush/Dripperz/actions/runs/123',
-    },
-    recovery: {
-      devDeploymentId: 'dpl_recovery',
-      restoredCandidateDeploymentId: 'dpl_candidate',
-      rehearsalRunUrl:
-        'https://github.com/benhammoush/Dripperz/actions/runs/122',
-    },
-    production: { deploymentId: 'dpl_previous' },
-  };
-  assert.equal(promotionEvidence(evidence, identity), evidence);
-  for (const key of ['candidate', 'acceptance', 'recovery', 'production']) {
-    const invalid = structuredClone(evidence);
-    delete invalid[key];
-    assert.throws(() => promotionEvidence(invalid, identity));
-  }
-  assert.throws(() =>
-    promotionEvidence(evidence, { ...identity, bundleDigest: 'changed' }),
-  );
-  const notRehearsed = structuredClone(evidence);
-  notRehearsed.recovery.devDeploymentId = 'dpl_candidate';
-  assert.throws(() => promotionEvidence(notRehearsed, identity));
-  const future = structuredClone(evidence);
-  future.acceptance.at = '2999-01-01T00:00:00Z';
-  assert.throws(() => promotionEvidence(future, identity));
+test('workflow keeps native production gating without a custom promotion manifest or dev secret', async () => {
+  const workflow = await readFile('.github/workflows/delivery.yml', 'utf8');
+  assert.ok(workflow.includes('name: ${{ needs.select.outputs.target }}'));
+  assert.ok(!workflow.includes('VERCEL_DEV_VERIFICATION_TOKEN'));
+  assert.ok(!workflow.includes('PROMOTION_EVIDENCE'));
 });

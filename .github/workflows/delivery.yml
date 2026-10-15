@@ -12,13 +12,9 @@ on:
         required: true
         type: choice
         options: [dev, production]
-      revision:
+      sha:
         description: Exact 40-character merged source SHA (never a branch or tag)
         required: true
-        type: string
-      evidence:
-        description: Production-only owner-reviewed JSON; see docs/delivery.md
-        required: false
         type: string
 
 permissions:
@@ -134,8 +130,6 @@ jobs:
           VERCEL_DEV_PROJECT_ID: ${{ vars.VERCEL_DEV_PROJECT_ID }}
           VERCEL_PRODUCTION_PROJECT_ID: ${{ vars.VERCEL_PRODUCTION_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_DEV_VERIFICATION_TOKEN: ${{ secrets.VERCEL_DEV_VERIFICATION_TOKEN }}
-          PROMOTION_EVIDENCE: ${{ inputs.evidence }}
       - name: Preserve identity even after interrupted verification
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

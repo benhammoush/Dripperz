@@ -25,7 +25,7 @@ Provisioning, environment/secret configuration, workflow dispatch, deployment, p
 3. Configure dedicated static hosting: framework **Other/null**, build and install commands explicitly empty, output directory `.`, root directory unset, Node `24.x`, no project environment variables. Only the default `<project>.vercel.app` domain is supported. Do not import legacy credentials or redirect/migrate Netlify domains. Hosted smoke expects publicly readable static content; decide access changes explicitly and revalidate.
 4. Record the actual team ID and two distinct project IDs as repository variables `VERCEL_TEAM_ID`, `VERCEL_DEV_PROJECT_ID`, `VERCEL_PRODUCTION_PROJECT_ID`. IDs are not tokens. Never guess them from slugs.
 5. Create GitHub environments `dev` and `production`, with deployment branch policies allowing branch `main` only (not a tag or wildcard). For production set required reviewer `benhammoush`, allow self-review, disable administrator bypass. Read settings back. Do not rely on automatic environment creation by a job: that has no approval protection.
-6. Put a distinct project-scoped `VERCEL_TOKEN` in each environment, never a repository-wide secret: dev's token is limited to `dripperz-dev`, production's to `dripperz-production`. Production additionally needs `VERCEL_DEV_VERIFICATION_TOKEN`, a separate token limited to `dripperz-dev`, used only for GET requests when checking dev acceptance/recovery. Vercel project tokens grant read/write access to their one project; the verification token is **not provider-enforced read-only**. Production therefore holds credentials capable of writing both Dripperz projects, but none may access unrelated projects. Do not substitute team/full-account tokens. Choose explicit expirations and record rotation ownership without values. Create tokens through the owner's secure dashboard interaction; do not obtain a broad bootstrap token merely to mint narrow ones. No token values or credential paths belong in source, artifacts or evidence.
+6. Put a distinct project-scoped `VERCEL_TOKEN` in each environment, never a repository-wide secret: dev's token is limited to `dripperz-dev`, production's to `dripperz-production`. Production needs no dev-verification credential: the owner reviews dev acceptance and recovery before native approval. Vercel project tokens grant project read/write access, not provider-enforced read-only access. Do not substitute team/full-account tokens. Choose explicit expirations and record rotation ownership without values. Use password-manager labels `<project>-<environment>-<provider>-<purpose>`, for example `dripperz-production-vercel-deploy`; GitHub still uses `VERCEL_TOKEN`. Create tokens through the owner's secure dashboard interaction. Inventory consumers before separately authorized obsolete-token cleanup; this source change does not revoke anything. No token values or credential paths belong in source, artifacts or evidence.
    No additional GitHub personal access token is required. Workflow source ancestry/freshness checks use the built-in read-only `GITHUB_TOKEN`; it is not used for administration readback. Keep the owner's broader CLI login local for authorized setup/readiness inspection; never copy it into Actions secrets as a substitute. The contract's policy validators support read-only setup checks, not automatic policy enforcement by the controller.
 7. Verify actual provider settings, Git trigger disconnection and native environment/approval enforcement; do not call a target operational because variables exist. Retain dated, non-secret main/environment policy evidence and recheck before authorizing enablement or promotion and after any policy/access change. Missing/uncertain evidence blocks authorization; if drift is discovered, keep delivery disabled pending separately authorized correction. Do not cancel an active mutation. The controller cannot enforce this operator prerequisite or detect weakened/deleted/recreated GitHub environments; native gates are only as strong as their current settings. Record each target independently as not configured, partial, configured-unverified, or operationally verified.
 8. Separately authorize dev enablement and a selected candidate run. Production stays disabled until acceptance/recovery and the first-production decision below are resolved.
@@ -38,7 +38,7 @@ The job uploads only tested `dist` files through Vercel's [deployment API](https
 
 Per-target job concurrency covers preflight, mutation and smoke, without cancelling an active job. GitHub may replace pending runs; the final latest-main check prevents an obsolete automatic dev deployment. Manual deliveries may deliberately deploy older merged source. Do not mutate the same project through competing CLI, dashboard, Git or other workflows during validation/promotion. A different dev deployment or configuration change invalidates acceptance; restore and repeat affected acceptance. Provider APIs do not offer an atomic cross-project lock: final checks narrow, but cannot eliminate, races from out-of-band operators.
 
-Before mutation the controller rechecks main ancestry/freshness, project/team identity, domain/static settings, configuration digest and current target identity. GitHub protection settings are operator-verified prerequisites, not runtime checks. Team ownership is established by each project's `accountId` matching the explicit team ID verified during setup, not a team endpoint inaccessible to project-scoped tokens. Production also checks the current accepted dev candidate, its configuration and public identity, owner-attested acceptance, the restored rehearsal record and the prior immutable production deployment. Configuration hashing covers the static settings, domain and access controls named in the controller; the owner must also review provider/team settings outside that bounded fingerprint. Synthetic tests enforce credential routing and reject team and GitHub administration endpoints; actual scoped-token endpoint access still requires read-only setup verification before enablement.
+Before mutation the delivery script rechecks main ancestry/freshness, selected project/team identity, domain/static settings, configuration digest and current target identity. GitHub protection settings are operator-verified prerequisites, not runtime checks. Team ownership uses the selected project's `accountId`, not a team endpoint inaccessible to project-scoped tokens. The owner manually checks the accepted dev source/version/deployment/configuration, applicable restored rehearsal evidence and prior production recovery identity after acceptance and immediately before native approval. Production never queries dev resources or receives a dev credential. Configuration hashing is bounded, not a complete provider-policy audit. Synthetic tests enforce target-only credential routing; actual scoped-token access still needs setup verification.
 
 There is exactly one deployment POST, with no retry. The controller writes `delivery-record.json` before requesting mutation, then records the provider ID before waiting for READY. It checks immutable and stable URLs, application shell, noindex headers and exact public identity. A record is retained on failures where possible. A timeout, lost response or interrupted job means **uncertain mutation**, not permission to rerun. Inspect the provider by project, source/build metadata and run ID; reconcile the active deployment before another action. Never automatically rollback production after a smoke failure.
 
@@ -52,42 +52,7 @@ There is exactly one deployment POST, with no retry. The controller writes `deli
 
 ## Production promotion input
 
-Dispatch from `main`, target `production`, with the same full source SHA accepted in dev. The workflow reruns checks and requires the rebuilt content digest to match dev. The owner must inspect the run records and public identities before native environment approval. The evidence is a manual attestation, **not automated proof of a walkthrough or rollback rehearsal**.
-
-The `evidence` input has this shape (placeholders are deliberately invalid):
-
-```json
-{
-  "candidate": {
-    "deploymentId": "dpl_RESTORED_DEV",
-    "revision": "FULL_SHA",
-    "version": "APP_VERSION",
-    "bundleDigest": "DEV_BUNDLE_DIGEST",
-    "configDigest": "DEV_CONFIG_DIGEST"
-  },
-  "acceptance": {
-    "reviewer": "benhammoush",
-    "at": "UTC_ACCEPTANCE_TIMESTAMP",
-    "runUrl": "https://github.com/benhammoush/Dripperz/actions/runs/123"
-  },
-  "recovery": {
-    "devDeploymentId": "dpl_REHEARSED_RECOVERY",
-    "revision": "RECOVERY_SHA",
-    "version": "RECOVERY_VERSION",
-    "bundleDigest": "RECOVERY_BUNDLE_DIGEST",
-    "configDigest": "RECOVERY_CONFIG_DIGEST",
-    "restoredCandidateDeploymentId": "dpl_RESTORED_DEV",
-    "rehearsalRunUrl": "https://github.com/benhammoush/Dripperz/actions/runs/122"
-  },
-  "production": {
-    "deploymentId": "dpl_PRIOR_PRODUCTION",
-    "revision": "PRIOR_PRODUCTION_SHA",
-    "version": "PRIOR_PRODUCTION_VERSION",
-    "bundleDigest": "PRIOR_PRODUCTION_BUNDLE_DIGEST",
-    "configDigest": "CURRENT_PRODUCTION_CONFIG_DIGEST"
-  }
-}
-```
+Dispatch from `main`, target `production`, with the same full `sha` accepted in dev. The workflow reruns the existing checks against that source and waits for native environment approval. The owner reviews the exact run inputs, dev source/version/provider/configuration, acceptance and recovery records before approval. No custom JSON promotion manifest or cross-project verification token is used. Same source does not imply identical environment artifacts. A selected SHA or green CI does not prove acceptance. Production reruns are rejected: diagnose failures, inspect provider state, then start a new dispatch and obtain fresh approval.
 
 ### First-production checkpoint
 

@@ -241,39 +241,3 @@ export function assertDeployment(deployment, record, projectId) {
     'Deployment is not the recorded READY source/build/configuration identity',
   );
 }
-
-/**
- * Require explicit owner-attested acceptance and recovery references for promotion.
- * The owner must review linked evidence; JSON input alone never proves a rehearsal.
- * @param evidence - Manually reviewed promotion record.
- * @param identity - Rebuilt source/version/bundle identity.
- * @returns Validated evidence, without inferring approval from source selection.
- */
-export function promotionEvidence(evidence, identity) {
-  const candidate = evidence?.candidate;
-  requireDelivery(
-    candidate &&
-      ['revision', 'version', 'bundleDigest'].every(
-        (key) => candidate[key] === identity[key],
-      ),
-    'Production build differs from the accepted dev source or bundle',
-  );
-  requireDelivery(
-    evidence.acceptance?.reviewer === OWNER &&
-      Number.isFinite(Date.parse(evidence.acceptance.at)) &&
-      Date.parse(evidence.acceptance.at) <= Date.now() &&
-      evidence.recovery?.restoredCandidateDeploymentId ===
-        candidate.deploymentId &&
-      evidence.recovery.devDeploymentId !== candidate.deploymentId &&
-      /^dpl_[a-zA-Z0-9]+$/.test(evidence.recovery.devDeploymentId ?? '') &&
-      /^dpl_[a-zA-Z0-9]+$/.test(evidence.production?.deploymentId ?? '') &&
-      [evidence.acceptance.runUrl, evidence.recovery.rehearsalRunUrl].every(
-        (url) =>
-          /^https:\/\/github\.com\/benhammoush\/Dripperz\/actions\/runs\/[0-9]+$/.test(
-            url ?? '',
-          ),
-      ),
-    'Owner acceptance, restored dev rehearsal and prior production recovery are required',
-  );
-  return evidence;
-}
