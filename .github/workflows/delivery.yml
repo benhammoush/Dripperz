@@ -1,0 +1,146 @@
+name: Delivery
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Isolated delivery target
+        required: true
+        type: choice
+        options: [dev, production]
+      revision:
+        description: Exact 40-character merged source SHA (never a branch or tag)
+        required: true
+        type: string
+      evidence:
+        description: Production-only owner-reviewed JSON; see docs/delivery.md
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  select:
+    name: Resolve exact merged source
+    if: >-
+      vars.DELIVERY_ENABLED == 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      revision: ${{ steps.source.outputs.revision }}
+      target: ${{ steps.source.outputs.target }}
+      automatic: ${{ steps.source.outputs.automatic }}
+    steps:
+      # The controller is from the main workflow revision, not from candidate input.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - name: Validate event, main ancestry and protection
+        id: source
+        run: node scripts/delivery.mjs select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_GOVERNANCE_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}
+
+  verify:
+    name: Recheck selected source and prepare bundle
+    needs: select
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.select.outputs.revision }}
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: candidate/.nvmrc
+          cache: npm
+          cache-dependency-path: candidate/package-lock.json
+      - name: Select pinned npm
+        run: npm install --global npm@11.19.0
+      - run: npm ci
+        working-directory: candidate
+      - run: npm run check
+        working-directory: candidate
+      - run: npx --no-install playwright install --with-deps chromium firefox webkit
+        working-directory: candidate
+      - run: npm run test:browser
+        working-directory: candidate
+      - name: Prepare tested static output with trusted controller
+        run: node ../control/scripts/delivery.mjs prepare
+        working-directory: candidate
+        env:
+          DELIVERY_REVISION: ${{ needs.select.outputs.revision }}
+          DELIVERY_TARGET: ${{ needs.select.outputs.target }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tested-delivery-bundle
+          path: candidate/dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  deliver:
+    name: Deliver selected candidate
+    needs: [select, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: ${{ needs.select.outputs.target }}
+    # No active mutation is cancelled. Pending automatic runs recheck freshness.
+    concurrency:
+      group: dripperz-delivery-${{ needs.select.outputs.target }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: tested-delivery-bundle
+          path: dist
+      - name: Fail-closed preflight, single deployment and read-only smoke
+        run: node scripts/delivery.mjs deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_GOVERNANCE_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN }}
+          DELIVERY_ENABLED: ${{ vars.DELIVERY_ENABLED }}
+          PRODUCTION_DELIVERY_ENABLED: ${{ vars.PRODUCTION_DELIVERY_ENABLED }}
+          DELIVERY_REVISION: ${{ needs.select.outputs.revision }}
+          DELIVERY_TARGET: ${{ needs.select.outputs.target }}
+          DELIVERY_AUTOMATIC: ${{ needs.select.outputs.automatic }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+          VERCEL_DEV_PROJECT_ID: ${{ vars.VERCEL_DEV_PROJECT_ID }}
+          VERCEL_PRODUCTION_PROJECT_ID: ${{ vars.VERCEL_PRODUCTION_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          PROMOTION_EVIDENCE: ${{ inputs.evidence }}
+      - name: Preserve identity even after interrupted verification
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: delivery-record-${{ needs.select.outputs.target }}
+          path: delivery-record.json
+          if-no-files-found: ignore
+          retention-days: 90

@@ -1,0 +1,102 @@
+# Dev → production delivery foundation
+
+This is the PR 2 delivery contract, **not evidence of configured environments or an operational showcase**. Local development remains unchanged. There is no staging target. Legacy Drip, Netlify, domains and other projects must remain untouched.
+
+## Agreed ownership and triggers
+
+- Owner/configuration custodian/production approver: `benhammoush`.
+- Vercel team: `benhammoushs-projects`, Hobby, for the user-confirmed strictly personal non-commercial historical showcase. Reassess the plan before commercial use or paid development/hosting.
+- Isolated projects: `dripperz-dev` and `dripperz-production`; each uses its own Vercel **production** target and default project domain. A provider target named production in the dev project is still the shared **dev** environment.
+- After protected-main push CI succeeds, automatically select that exact SHA for dev. Superseded automatic runs fail before mutation. Manual dev redeployment and production dispatch run from main and accept a full merged SHA, including an older merged revision for recovery. They do not resolve a branch/tag to its latest commit.
+- Every delivery reruns the existing quality/build and three-browser checks on that source. Trusted control scripts come from the main workflow revision, independently of the selected candidate. Test jobs receive no provider credentials. Deployment secrets are scoped to GitHub environments.
+- The existing CI quality job validates workflow syntax/expressions using checksum-verified actionlint `1.7.12`; validation failure blocks that check. Embedded shell/Python analyzer integrations are disabled; this does not claim a separate shell security audit.
+- Production needs native explicit owner approval; self-review is allowed; administrator bypass is disabled. A manual dispatch is not approval. Missing approval enforcement or readback fails closed.
+
+## Disabled until separately authorized setup
+
+The workflow makes **no delivery attempt** unless repository variable `DELIVERY_ENABLED` is exactly `true`. Production additionally requires `PRODUCTION_DELIVERY_ENABLED=true`. Keep both absent/false while drafting, publishing, or setting up. Do not enable delivery as an incidental part of merging PR 2. Enabling dev makes later successful main CI runs eligible to mutate dev.
+
+Provisioning, environment/secret configuration, workflow dispatch, deployment, publication and merging are separately authorized operations. An assistant implementing this milestone does not perform deployment or rollback mutations.
+
+### Setup checklist for the authorized operator
+
+1. Read back main protection. Existing baseline: required checks `Quality and build` / `Browser smoke`, bound to GitHub Actions, strict up-to-date checks, administrator enforcement, force-push/deletion disabled, conversations resolved. Recorded solo policy has zero required approving PR reviews; do not silently substitute another review policy. The automated preflight checks the status-check/admin/force-push/deletion baseline; contribution review requirements still apply.
+2. Create the two approved projects in the agreed team, with no Git integration. Do not connect the repository and merely assume that Git auto-deployment is disabled. Preflight rejects any linked repository.
+3. Configure dedicated static hosting: framework **Other/null**, build and install commands explicitly empty, output directory `.`, root directory unset, Node `24.x`, no project environment variables. Only the default `<project>.vercel.app` domain is supported. Do not import legacy credentials or redirect/migrate Netlify domains. Hosted smoke expects publicly readable static content; decide access changes explicitly and revalidate.
+4. Record the actual team ID and two distinct project IDs as repository variables `VERCEL_TEAM_ID`, `VERCEL_DEV_PROJECT_ID`, `VERCEL_PRODUCTION_PROJECT_ID`. IDs are not tokens. Never guess them from slugs.
+5. Create GitHub environments `dev` and `production`, with deployment branch policies allowing branch `main` only (not a tag or wildcard). For production set required reviewer `benhammoush`, allow self-review, disable administrator bypass. Read settings back. Do not rely on automatic environment creation by a job: that has no approval protection.
+6. Put `VERCEL_TOKEN` in each environment, never a repository-wide secret. Use the least-privileged available team/project access. If the plan/token cannot isolate permissions per project, document the actual scope and obtain acceptance of that limitation before enabling. No token values or credential paths belong in source, artifacts or evidence.
+   Separately configure repository secret `GOVERNANCE_READ_TOKEN`: a fine-grained, repository-only token with **Administration: read** and **Actions: read** (plus implicit metadata read), no write permissions. The standard `GITHUB_TOKEN` cannot grant Administration read and is not used as a substitute. This read-only token is needed by selection before a delivery environment is chosen, as well as environment/protection readback immediately before mutation. Its repository-wide availability and actual endpoint access require explicit setup review; no token is created or supplied by this implementation. Missing/expired/insufficient access blocks delivery, never skips verification.
+7. Verify actual provider settings, Git trigger disconnection and approval enforcement; do not call a target operational because variables exist. Record each target independently as not configured, partial, configured-unverified, or operationally verified, with dated evidence.
+8. Separately authorize dev enablement and a selected candidate run. Production stays disabled until acceptance/recovery and the first-production decision below are resolved.
+
+## Identity, concurrency and failure handling
+
+The static bundle contains `/delivery.json`: schema, full source SHA, app version, target, GitHub run ID and content digest. The digest includes sorted file names/bytes (including delivery configuration), excluding only the identity document. Both environments remain `noindex, nofollow`, with disallow-all robots and no-store response headers until the later indexing-policy milestone. No application-version bump is made merely for foundation work.
+
+The job uploads only tested `dist` files through Vercel's [deployment API](https://vercel.com/docs/rest-api/reference/endpoints/deployments/create-a-new-deployment), using documented inline base64 files and explicit static `projectSettings`. A root [`vercel.json`](https://vercel.com/docs/project-configuration/vercel-json) supplies headers and repeats the empty install/build commands, null framework and root output directory; no package source is uploaded. Payload/configuration shape is tested locally; actual provider handling remains unverified until an authorized dev deployment and hosted smoke. Smoke must establish noindex/no-store headers, disallow-all robots and exact identity at both immutable and stable URLs. The current inline uploader is bounded to a 4 MB JSON request; exceeding that limit fails **before** mutation. This transport bound is not a product performance budget. Larger visual/3D milestones need a separately tested uploader, not a silent bypass.
+
+Per-target job concurrency covers preflight, mutation and smoke, without cancelling an active job. GitHub may replace pending runs; the final latest-main check prevents an obsolete automatic dev deployment. Manual deliveries may deliberately deploy older merged source. Do not mutate the same project through competing CLI, dashboard, Git or other workflows during validation/promotion. A different dev deployment or configuration change invalidates acceptance; restore and repeat affected acceptance. Provider APIs do not offer an atomic cross-project lock: final checks narrow, but cannot eliminate, races from out-of-band operators.
+
+Before mutation the controller rechecks main ancestry/protection, project/team identity, domain/static settings, configuration digest and current target identity. Production also checks the current accepted dev candidate, its configuration and public identity, owner-attested acceptance, the restored rehearsal record and the prior immutable production deployment. Configuration hashing covers the static settings, domain and access controls named in the controller; the owner must also review provider/team settings outside that bounded fingerprint.
+
+There is exactly one deployment POST, with no retry. The controller writes `delivery-record.json` before requesting mutation, then records the provider ID before waiting for READY. It checks immutable and stable URLs, application shell, noindex headers and exact public identity. A record is retained on failures where possible. A timeout, lost response or interrupted job means **uncertain mutation**, not permission to rerun. Inspect the provider by project, source/build metadata and run ID; reconcile the active deployment before another action. Never automatically rollback production after a smoke failure.
+
+## Dev acceptance and recovery rehearsal
+
+1. Retain the `tested-delivery-bundle` (14-day default) and `delivery-record-dev` (90-day default), exact source/version, provider ID/URL, config digest and run URL. Copy durable, non-secret release evidence into the chosen release record before artifact expiry; expiration invalidates artifact-only evidence. There is no auto-commit/synchronization.
+2. Verify the actual browser experience on the dev stable URL at representative desktop/mobile sizes, keyboard navigation, identity and noindex behavior. Automated hosted smoke is only a shell/identity check, not a user walkthrough or acceptance of the completed showcase.
+3. If recovery evidence is missing/invalidated, separately authorize a dev-only rehearsal: manually select a known earlier merged source, rerun quality/browser checks, deliver it, and verify its identity and browser behavior. Retain that immutable recovery deployment and record. Do not alter persistent data.
+4. Restore the selected candidate through manual dev delivery; this produces a **new provider identity**. Verify it again and repeat the user's affected acceptance on that restored candidate. Record the restored identity, source/version/build/config digest, owner, UTC acceptance time and evidence run URLs. Acceptance of the pre-rehearsal deployment is not acceptance of the restored one.
+5. Keep accepted dev quiescent during promotion. Check source/version/provider/config identity after acceptance and immediately before promotion. Any interrupting deployment/config change requires repeated affected validation.
+
+## Production promotion input
+
+Dispatch from `main`, target `production`, with the same full source SHA accepted in dev. The workflow reruns checks and requires the rebuilt content digest to match dev. The owner must inspect the run records and public identities before native environment approval. The evidence is a manual attestation, **not automated proof of a walkthrough or rollback rehearsal**.
+
+The `evidence` input has this shape (placeholders are deliberately invalid):
+
+```json
+{
+  "candidate": {
+    "deploymentId": "dpl_RESTORED_DEV",
+    "revision": "FULL_SHA",
+    "version": "APP_VERSION",
+    "bundleDigest": "DEV_BUNDLE_DIGEST",
+    "configDigest": "DEV_CONFIG_DIGEST"
+  },
+  "acceptance": {
+    "reviewer": "benhammoush",
+    "at": "UTC_ACCEPTANCE_TIMESTAMP",
+    "runUrl": "https://github.com/benhammoush/Dripperz/actions/runs/123"
+  },
+  "recovery": {
+    "devDeploymentId": "dpl_REHEARSED_RECOVERY",
+    "revision": "RECOVERY_SHA",
+    "version": "RECOVERY_VERSION",
+    "bundleDigest": "RECOVERY_BUNDLE_DIGEST",
+    "configDigest": "RECOVERY_CONFIG_DIGEST",
+    "restoredCandidateDeploymentId": "dpl_RESTORED_DEV",
+    "rehearsalRunUrl": "https://github.com/benhammoush/Dripperz/actions/runs/122"
+  },
+  "production": {
+    "deploymentId": "dpl_PRIOR_PRODUCTION",
+    "revision": "PRIOR_PRODUCTION_SHA",
+    "version": "PRIOR_PRODUCTION_VERSION",
+    "bundleDigest": "PRIOR_PRODUCTION_BUNDLE_DIGEST",
+    "configDigest": "CURRENT_PRODUCTION_CONFIG_DIGEST"
+  }
+}
+```
+
+### First-production checkpoint
+
+An empty production project has no prior immutable production recovery identity. The current workflow intentionally rejects that case. **Do not invent a prior deployment or relax validation to get the first run through.** Before the first production deployment, separately approve and implement a bootstrap/recovery policy reflecting that there is no predecessor. That consequential release decision is outside PR 2; keep production disabled meanwhile. A configured dev target does not make production operational.
+
+## Application rollback guidance
+
+Rollback is a separately authorized mutation, never a side effect of smoke. Identify the exact recorded prior immutable deployment, same project/team, READY state, source/version/build/config and public identity first. Review whether configuration or provider changes invalidate it. Preserve the failed/new deployment identity for diagnosis. Never select “latest” or infer recovery from a branch name.
+
+For dev, use the manual exact-source workflow to rehearse/recover, recording the new provider identity. For production, prefer the provider's supported rollback of the verified prior immutable deployment, performed by the authorized operator under the same explicit approval and target exclusion policy. Do not use an unreviewed dashboard or CLI action as a substitute for that policy. The PR 2 workflow does not automate provider rollback. If recovery instead rebuilds an older merged source, first validate/accept that exact candidate in dev and use the normal approved production promotion contract; rebuilds are not the original immutable deployment.
+
+After rollback, read back the provider's active production target and check both immutable and stable URL source/version identity, shell and browser behavior. Retain the action/approver/time/prior-and-restored identities and recovery smoke evidence. Restore/revalidate a newer candidate only with separate authorization. None of these operations permits persistent-data changes.
