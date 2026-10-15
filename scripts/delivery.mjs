@@ -11,14 +11,10 @@ import { setTimeout } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import {
   REPOSITORY,
-  TEAM,
   requireDelivery,
   sourceRevision,
   projectName,
   fingerprint,
-  assertMainProtection,
-  assertProductionGate,
-  assertEnvironmentBranchPolicy,
   staticHostingConfiguration,
   projectConfiguration,
   assertDeployment,
@@ -40,13 +36,22 @@ function required(name) {
 /**
  * Call an authenticated API with bounded waits and safe errors. Mutations are never
  * retried: ambiguous failures require provider inspection before another action.
- * @param service - GitHub content, governance-readback or Vercel API selector.
+ * @param service - GitHub source metadata or target/dev-project API selector.
  * @param path - Relative endpoint, constructed only by this trusted controller.
  * @param body - Optional deployment request; absent means read-only GET.
  * @returns Parsed successful API response.
  */
 async function api(service, path, body) {
-  const github = service === 'github' || service === 'governance';
+  const github = service === 'github';
+  const credential = github
+    ? 'GH_TOKEN'
+    : service === 'vercel-dev'
+      ? 'VERCEL_DEV_VERIFICATION_TOKEN'
+      : 'VERCEL_TOKEN';
+  requireDelivery(
+    service !== 'vercel-dev' || !body,
+    'Dev verification credential is restricted to read-only controller calls',
+  );
   const response = await fetch(
     `${github ? 'https://api.github.com' : 'https://api.vercel.com'}${path}`,
     {
@@ -54,7 +59,7 @@ async function api(service, path, body) {
       redirect: 'error',
       signal: AbortSignal.timeout(30_000),
       headers: {
-        Authorization: `Bearer ${required(service === 'governance' ? 'GH_GOVERNANCE_TOKEN' : github ? 'GH_TOKEN' : 'VERCEL_TOKEN')}`,
+        Authorization: `Bearer ${required(credential)}`,
         Accept: 'application/json',
         'Content-Type': 'application/json',
         ...(github ? { 'X-GitHub-Api-Version': '2022-11-28' } : {}),
@@ -89,9 +94,6 @@ async function mergedSource(revision, automatic) {
   requireDelivery(
     !automatic || revision === main.commit.sha,
     'Automatic dev run was superseded',
-  );
-  assertMainProtection(
-    await api('governance', `/repos/${REPOSITORY}/branches/main/protection`),
   );
 }
 
@@ -285,16 +287,8 @@ export async function deploy() {
       'Production remains disabled',
     );
   }
-  const environment = await api(
-    'governance',
-    `/repos/${REPOSITORY}/environments/${target}`,
-  );
-  const policies = await api(
-    'governance',
-    `/repos/${REPOSITORY}/environments/${target}/deployment-branch-policies`,
-  );
-  assertEnvironmentBranchPolicy(environment, policies, target);
-  if (target === 'production') assertProductionGate(environment, policies);
+  // GitHub enforces the job's native environment gate before this controller
+  // starts. Policy readback is an operator prerequisite, not a runtime API check.
   const teamId = required('VERCEL_TEAM_ID');
   const devId = required('VERCEL_DEV_PROJECT_ID');
   const productionId = required('VERCEL_PRODUCTION_PROJECT_ID');
@@ -305,8 +299,8 @@ export async function deploy() {
     'Explicit, distinct provider identities required',
   );
   const suffix = `?teamId=${encodeURIComponent(teamId)}`;
-  const team = await api('vercel', `/v2/teams/${teamId}`);
-  requireDelivery(team.slug === TEAM, 'Unexpected Vercel team');
+  // Project-scoped tokens cannot read team endpoints. Each project's accountId
+  // below must instead match the explicit team identity verified during setup.
   const projectId = target === 'dev' ? devId : productionId;
   const identity = JSON.parse(await readFile('dist/delivery.json', 'utf8'));
   requireDelivery(
@@ -339,9 +333,9 @@ export async function deploy() {
       evidence.recovery.configDigest === evidence.candidate.configDigest,
       'Dev recovery rehearsal configuration no longer matches the accepted candidate',
     );
-    const dev = await api('vercel', `/v9/projects/${devId}${suffix}`);
+    const dev = await api('vercel-dev', `/v9/projects/${devId}${suffix}`);
     const devDomains = await api(
-      'vercel',
+      'vercel-dev',
       `/v9/projects/${devId}/domains${suffix}`,
     );
     requireDelivery(
@@ -364,7 +358,7 @@ export async function deploy() {
       [evidence.production, productionId],
     ]) {
       const deployment = await api(
-        'vercel',
+        id === devId ? 'vercel-dev' : 'vercel',
         `/v13/deployments/${encodeURIComponent(record.deploymentId)}${suffix}`,
       );
       assertDeployment(deployment, record, id);
@@ -387,7 +381,7 @@ export async function deploy() {
     }
     const acceptedAt = Date.parse(evidence.acceptance.at);
     const candidate = await api(
-      'vercel',
+      'vercel-dev',
       `/v13/deployments/${encodeURIComponent(evidence.candidate.deploymentId)}${suffix}`,
     );
     requireDelivery(
@@ -455,9 +449,9 @@ export async function deploy() {
     'Target configuration or recovery identity changed during preflight',
   );
   if (evidence) {
-    const latestDev = await api('vercel', `/v9/projects/${devId}${suffix}`);
+    const latestDev = await api('vercel-dev', `/v9/projects/${devId}${suffix}`);
     const latestDevDomains = await api(
-      'vercel',
+      'vercel-dev',
       `/v9/projects/${devId}/domains${suffix}`,
     );
     requireDelivery(

@@ -40,8 +40,8 @@ async function withController(scenario, run) {
     GITHUB_REPOSITORY: 'benhammoush/Dripperz',
     GITHUB_REF: 'refs/heads/main',
     GH_TOKEN: 'synthetic-github',
-    GH_GOVERNANCE_TOKEN: 'synthetic-governance',
     VERCEL_TOKEN: 'synthetic-vercel',
+    VERCEL_DEV_VERIFICATION_TOKEN: 'synthetic-dev-verification',
     DELIVERY_ENABLED: 'true',
     PRODUCTION_DELIVERY_ENABLED: production ? 'true' : 'false',
     DELIVERY_REVISION: 'a'.repeat(40),
@@ -185,46 +185,14 @@ async function withController(scenario, run) {
       });
       let result;
       if (url.hostname === 'api.github.com') {
-        if (
-          url.pathname.endsWith('/protection') ||
-          url.pathname.includes('/environments/')
-        ) {
-          assert.equal(
-            options.headers.Authorization,
-            'Bearer synthetic-governance',
-          );
-        }
-        if (url.pathname.endsWith('/branches/main/protection')) {
-          result = {
-            required_status_checks: {
-              strict: true,
-              checks: [
-                { context: 'Quality and build', app_id: 15368 },
-                { context: 'Browser smoke', app_id: 15368 },
-              ],
-            },
-            enforce_admins: { enabled: true },
-            allow_force_pushes: { enabled: false },
-            allow_deletions: { enabled: false },
-          };
-        } else if (url.pathname.endsWith('/branches/main')) {
+        assert.equal(options.headers.Authorization, 'Bearer synthetic-github');
+        if (url.pathname.endsWith('/branches/main')) {
           result = {
             commit: {
               sha:
                 scenario === 'superseded' ? 'b'.repeat(40) : identity.revision,
             },
           };
-        } else if (url.pathname.includes('/environments/')) {
-          const protection = gate();
-          if (url.pathname.includes('/environments/dev'))
-            protection.environment.name = 'dev';
-          if (scenario === 'dev-policy-missing')
-            protection.policies.branch_policies[0].name = '*';
-          if (scenario === 'production-gate-bypass')
-            protection.environment.can_admins_bypass = true;
-          result = url.pathname.endsWith('/deployment-branch-policies')
-            ? protection.policies
-            : protection.environment;
         } else if (url.pathname.includes('/compare/')) {
           result = {
             status: scenario === 'unmerged' ? 'diverged' : 'identical',
@@ -234,9 +202,16 @@ async function withController(scenario, run) {
             `Unexpected synthetic GitHub endpoint: ${url.pathname}`,
           );
       } else if (url.hostname === 'api.vercel.com') {
-        if (url.pathname === '/v2/teams/team_test')
-          result = { slug: 'benhammoushs-projects' };
-        else if (url.pathname === '/v9/projects/prj_dev/domains')
+        const devRead =
+          production &&
+          (url.pathname.startsWith('/v9/projects/prj_dev') ||
+            /\/v13\/deployments\/dpl_(candidate|recovery)$/.test(url.pathname));
+        assert.equal(
+          options.headers.Authorization,
+          `Bearer ${devRead ? 'synthetic-dev-verification' : 'synthetic-vercel'}`,
+        );
+        if (devRead) assert.equal(options.method, 'GET');
+        if (url.pathname === '/v9/projects/prj_dev/domains')
           result = fixture.domains;
         else if (url.pathname === '/v9/projects/prj_dev') {
           projectReads++;
@@ -348,7 +323,7 @@ async function withController(scenario, run) {
   }
 }
 
-test('controller selects only trusted successful main push CI, never PR or fork CI', async () => {
+test('controller selects trusted successful main push CI with built-in authentication and no administration endpoints', async () => {
   await withController('success', async ({ directory }) => {
     await select();
     assert.match(
@@ -380,9 +355,8 @@ test('controller rejects stale automatic, unmerged, drifted, tampered and disabl
     'tampered',
     'disabled',
     'missing-config',
-    'missing-governance',
+    'missing-github',
     'production-disabled',
-    'dev-policy-missing',
   ]) {
     await withController(scenario, async ({ requests }) => {
       if (scenario === 'tampered')
@@ -390,8 +364,7 @@ test('controller rejects stale automatic, unmerged, drifted, tampered and disabl
       if (scenario === 'disabled') process.env.DELIVERY_ENABLED = 'false';
       if (scenario === 'missing-config')
         delete process.env.VERCEL_DEV_PROJECT_ID;
-      if (scenario === 'missing-governance')
-        delete process.env.GH_GOVERNANCE_TOKEN;
+      if (scenario === 'missing-github') delete process.env.GH_TOKEN;
       if (scenario === 'production-disabled') {
         process.env.DELIVERY_TARGET = 'production';
         const identity = JSON.parse(
@@ -407,9 +380,8 @@ test('controller rejects stale automatic, unmerged, drifted, tampered and disabl
         tampered: /bundle identity or content mismatch/,
         disabled: /Delivery remains disabled/,
         'missing-config': /Missing VERCEL_DEV_PROJECT_ID/,
-        'missing-governance': /Missing GH_GOVERNANCE_TOKEN/,
+        'missing-github': /Missing GH_TOKEN/,
         'production-disabled': /Production remains disabled/,
-        'dev-policy-missing': /Native main-only/,
       };
       await assert.rejects(deploy, expected[scenario]);
       assert.equal(
@@ -502,9 +474,8 @@ test('actual production controller validates restored candidate and recovery bef
   );
 });
 
-test('production controller rejects gates, stale acceptance/recovery, run identity, empty production and late drift before POST', async () => {
+test('production controller rejects stale acceptance/recovery, run identity, empty production, late drift and missing dev credentials before POST', async () => {
   for (const scenario of [
-    'production-gate-bypass',
     'production-candidate-drift',
     'production-recovery-mismatch',
     'production-prior-mismatch',
@@ -512,10 +483,12 @@ test('production controller rejects gates, stale acceptance/recovery, run identi
     'production-run-mismatch',
     'production-empty',
     'production-late-dev-drift',
+    'production-missing-dev-credential',
   ]) {
     await withController(scenario, async ({ requests }) => {
+      if (scenario === 'production-missing-dev-credential')
+        delete process.env.VERCEL_DEV_VERIFICATION_TOKEN;
       const expected = {
-        'production-gate-bypass': /Production needs owner approval/,
         'production-candidate-drift': /recovery or configuration drifted/,
         'production-recovery-mismatch': /recorded READY/,
         'production-prior-mismatch': /recorded READY/,
@@ -523,6 +496,8 @@ test('production controller rejects gates, stale acceptance/recovery, run identi
         'production-run-mismatch': /Hosted identity differs/,
         'production-empty': /recovery or configuration drifted/,
         'production-late-dev-drift': /Dev acceptance invalidated/,
+        'production-missing-dev-credential':
+          /Missing VERCEL_DEV_VERIFICATION_TOKEN/,
       };
       await assert.rejects(deploy, expected[scenario]);
       assert.equal(
@@ -681,7 +656,7 @@ test('dedicated project settings, no secrets, no Git triggers and exact domain a
   assert.notEqual(checkProject(fixture), before);
 });
 
-test('native owner approval cannot be replaced by dispatch, bypass or wildcard branches', () => {
+test('setup validator requires native owner approval, no bypass and main-only branches', () => {
   const valid = gate();
   assert.doesNotThrow(() =>
     assertProductionGate(valid.environment, valid.policies),
@@ -725,7 +700,7 @@ test('native owner approval cannot be replaced by dispatch, bypass or wildcard b
   }
 });
 
-test('actual branch protection must retain trusted required checks and enforcement', () => {
+test('setup validator requires trusted branch checks and enforcement', () => {
   const protection = {
     required_status_checks: {
       strict: true,
