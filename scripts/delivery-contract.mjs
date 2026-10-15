@@ -96,6 +96,7 @@ function canonical(value) {
 }
 
 /**
+ * Validate operator setup readback, not runtime controller policy enforcement.
  * Require actual main protection, not merely successful CI or YAML declarations.
  * This preserves the existing solo-maintainer policy rather than inventing reviews.
  * @param protection - GitHub branch-protection readback.
@@ -117,7 +118,7 @@ export function assertMainProtection(protection) {
 }
 
 /**
- * Require native approval and main-only deployment policy before production mutation.
+ * Validate native approval and main-only policy in operator setup readback.
  * @param environment - Actual GitHub environment readback.
  * @param policies - Actual custom deployment branch policies.
  */
@@ -136,8 +137,8 @@ export function assertProductionGate(environment, policies) {
 }
 
 /**
- * Require main-only native environment policy for either target, protecting its
- * credentials from a different branch's modified workflow.
+ * Validate main-only native environment policy during operator setup readback,
+ * protecting credentials from a different branch's modified workflow when enforced.
  * @param environment - Actual GitHub environment readback.
  * @param policies - Actual custom deployment branch policies.
  * @param target - Agreed delivery environment.
