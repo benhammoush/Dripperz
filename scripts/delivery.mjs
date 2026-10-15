@@ -18,7 +18,6 @@ import {
   staticHostingConfiguration,
   projectConfiguration,
   assertDeployment,
-  promotionEvidence,
 } from './delivery-contract.mjs';
 
 const env = process.env;
@@ -36,22 +35,14 @@ function required(name) {
 /**
  * Call an authenticated API with bounded waits and safe errors. Mutations are never
  * retried: ambiguous failures require provider inspection before another action.
- * @param service - GitHub source metadata or target/dev-project API selector.
+ * @param service - GitHub source metadata or the selected target's provider API.
  * @param path - Relative endpoint, constructed only by this trusted controller.
  * @param body - Optional deployment request; absent means read-only GET.
  * @returns Parsed successful API response.
  */
 async function api(service, path, body) {
   const github = service === 'github';
-  const credential = github
-    ? 'GH_TOKEN'
-    : service === 'vercel-dev'
-      ? 'VERCEL_DEV_VERIFICATION_TOKEN'
-      : 'VERCEL_TOKEN';
-  requireDelivery(
-    service !== 'vercel-dev' || !body,
-    'Dev verification credential is restricted to read-only controller calls',
-  );
+  const credential = github ? 'GH_TOKEN' : 'VERCEL_TOKEN';
   const response = await fetch(
     `${github ? 'https://api.github.com' : 'https://api.vercel.com'}${path}`,
     {
@@ -130,7 +121,7 @@ export async function select() {
         env.GITHUB_REF === 'refs/heads/main',
       'Dispatch must run from main',
     );
-    revision = event.inputs?.revision;
+    revision = event.inputs?.sha;
     target = event.inputs?.target;
   }
   projectName(target);
@@ -283,6 +274,11 @@ export async function deploy() {
   const name = projectName(target);
   if (target === 'production') {
     requireDelivery(
+      env.GITHUB_EVENT_NAME === 'workflow_dispatch' &&
+        env.GITHUB_RUN_ATTEMPT === '1',
+      'Production requires a new manual dispatch and native approval',
+    );
+    requireDelivery(
       env.PRODUCTION_DELIVERY_ENABLED === 'true',
       'Production remains disabled',
     );
@@ -323,76 +319,13 @@ export async function deploy() {
     teamId,
     projectId,
   );
-  let evidence;
+  // Dev acceptance and recovery are reviewed by the owner before native approval.
+  // Production never receives a dev credential or automatically reads dev resources.
   if (target === 'production') {
-    evidence = promotionEvidence(
-      JSON.parse(required('PROMOTION_EVIDENCE')),
-      identity,
-    );
     requireDelivery(
-      evidence.recovery.configDigest === evidence.candidate.configDigest,
-      'Dev recovery rehearsal configuration no longer matches the accepted candidate',
+      /^dpl_[a-zA-Z0-9]+$/.test(project.targets?.production?.id ?? ''),
+      'First production requires a separately agreed bootstrap/recovery policy',
     );
-    const dev = await api('vercel-dev', `/v9/projects/${devId}${suffix}`);
-    const devDomains = await api(
-      'vercel-dev',
-      `/v9/projects/${devId}/domains${suffix}`,
-    );
-    requireDelivery(
-      projectConfiguration(dev, devDomains, 'dev', teamId, devId) ===
-        evidence.candidate.configDigest &&
-        dev.targets?.production?.id === evidence.candidate.deploymentId &&
-        project.targets?.production?.id === evidence.production.deploymentId &&
-        configDigest === evidence.production.configDigest,
-      'Dev candidate, production recovery or configuration drifted',
-    );
-    for (const [record, id] of [
-      [evidence.candidate, devId],
-      [
-        {
-          ...evidence.recovery,
-          deploymentId: evidence.recovery.devDeploymentId,
-        },
-        devId,
-      ],
-      [evidence.production, productionId],
-    ]) {
-      const deployment = await api(
-        id === devId ? 'vercel-dev' : 'vercel',
-        `/v13/deployments/${encodeURIComponent(record.deploymentId)}${suffix}`,
-      );
-      assertDeployment(deployment, record, id);
-      const hosted = await fetch(`https://${deployment.url}/delivery.json`, {
-        redirect: 'error',
-        signal: AbortSignal.timeout(30_000),
-      });
-      requireDelivery(
-        hosted.ok,
-        'Recovery/candidate public identity unavailable',
-      );
-      const previousIdentity = await hosted.json();
-      requireDelivery(
-        ['revision', 'version', 'bundleDigest'].every(
-          (key) => previousIdentity[key] === record[key],
-        ),
-        'Recovery/candidate public identity mismatch',
-      );
-      await smoke(deployment.url, previousIdentity);
-    }
-    const acceptedAt = Date.parse(evidence.acceptance.at);
-    const candidate = await api(
-      'vercel-dev',
-      `/v13/deployments/${encodeURIComponent(evidence.candidate.deploymentId)}${suffix}`,
-    );
-    requireDelivery(
-      acceptedAt >= candidate.createdAt,
-      'Acceptance predates the restored candidate',
-    );
-    await smoke(`${projectName('dev')}.vercel.app`, {
-      ...identity,
-      target: 'dev',
-      runId: candidate.meta.runId,
-    });
   }
   const upload = [];
   for (const path of await files('dist')) {
@@ -448,32 +381,12 @@ export async function deploy() {
       latestProject.targets?.production?.id === project.targets?.production?.id,
     'Target configuration or recovery identity changed during preflight',
   );
-  if (evidence) {
-    const latestDev = await api('vercel-dev', `/v9/projects/${devId}${suffix}`);
-    const latestDevDomains = await api(
-      'vercel-dev',
-      `/v9/projects/${devId}/domains${suffix}`,
-    );
-    requireDelivery(
-      latestDev.targets?.production?.id === evidence.candidate.deploymentId &&
-        projectConfiguration(
-          latestDev,
-          latestDevDomains,
-          'dev',
-          teamId,
-          devId,
-        ) === evidence.candidate.configDigest,
-      'Dev acceptance invalidated during preflight',
-    );
-  }
   const record = {
     ...identity,
     configDigest,
     teamId,
     projectId,
     priorDeploymentId: project.targets?.production?.id ?? null,
-    acceptedDevDeploymentId: evidence?.candidate.deploymentId ?? null,
-    promotion: evidence ?? null,
     startedAt: new Date().toISOString(),
     status: 'mutation-requested',
   };
