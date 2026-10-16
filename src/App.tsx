@@ -1,5 +1,5 @@
 /**
- * Responsive Phase 3 shell; content features remain explicitly deferred.
+ * Responsive Phase 3 showcase with local galleries and explicitly historical content.
  * @packageDocumentation
  */
 
@@ -7,10 +7,12 @@ import { APP_VERSION } from './appVersion';
 import { useRef, useState } from 'react';
 import { Atmosphere } from './Atmosphere';
 import { SECTIONS } from './sections';
+import { Collection, Cybermap, ShowcaseFaq } from './CoreShowcase';
+import { PUBLIC_LINKS } from './showcaseContent';
 
 /**
- * Render shared desktop/mobile navigation and the provisional visual shell without external services.
- * @returns The Phase 3 shell, deferred-feature targets and runtime version.
+ * Render shared desktop/mobile navigation and approved core content without external integrations.
+ * @returns The core showcase, remaining deferred-feature targets and runtime version.
  */
 export function App() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -100,7 +102,7 @@ export function App() {
             </a>
             <div className="hero-base">
               <p>
-                Visual shell preview <span>/ Content rebuild in progress</span>
+                Historical showcase <span>/ Core collection archive</span>
               </p>
               <button
                 className="motion-toggle"
@@ -136,8 +138,18 @@ export function App() {
                 0{index + 1} / {section.label}
               </p>
               <h2 id={`${section.id}-title`}>{section.title}</h2>
-              <p>{section.detail}</p>
-              <span className="milestone-label">Not yet implemented</span>
+              {section.id === 'collection' ? (
+                <Collection />
+              ) : section.id === 'cybermap' ? (
+                <Cybermap />
+              ) : section.id === 'faq' ? (
+                <ShowcaseFaq />
+              ) : (
+                <>
+                  <p>{section.detail}</p>
+                  <span className="milestone-label">Not yet implemented</span>
+                </>
+              )}
             </section>
           ))}
         </div>
@@ -147,6 +159,11 @@ export function App() {
           Dripperz Cyber Club ↑
         </a>
         <p>Historical showcase · No Web3 integration</p>
+        {PUBLIC_LINKS.map((link) => (
+          <a key={link.href} href={link.href} tabIndex={0}>
+            {link.label} ↗
+          </a>
+        ))}
         <p>
           Version <span data-testid="app-version">{APP_VERSION}</span>
         </p>
