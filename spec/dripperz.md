@@ -43,6 +43,7 @@ No new business promises, launch dates, adoption targets or Now/Next/Later prior
 - Provide responsive navigation with correct section targets, keyboard operation and visible focus behavior.
 - Respect reduced-motion preferences. Animations must use lifecycle cleanup and visibility-aware behavior rather than unmanaged timers or global scroll handlers.
 - Verify representative desktop/mobile visual fidelity against approved reference captures. Exact viewport and comparison criteria remain unresolved in section 7.
+- PR 3 provisional baseline approved 2026-10-16: source-first review at desktop 1440×900, tablet 768×1024 and mobile 390×844, with owner localhost approval of layout/identity rather than pixel-exact matching. Usable reference captures remain outstanding; see [visual-shell provenance and criteria](../docs/visual-shell.md). The owner confirmed publication rights for the Phase 3 logo/branding only, not later artwork, models or documents.
 
 ### 3.2 Core showcase
 
@@ -215,7 +216,7 @@ Do not silently choose defaults or claim these items are verified. Resolve each 
 | Toolchain execution verification | Stack and version-check contract selected in section 5.1; verify reproducible install, actual plugin/parser behavior, documentation-rule fixtures, type checks, unit/browser tests and build   | PR 1                                                 |
 | Git governance                   | Approved review/check/up-to-date/bypass policy and actual enforcement readback                                                                                                                 | Governance setup; applicable merge/release readiness |
 | Hosting topology details         | Names, ownership and trigger policy agreed above; verify actual access/token scope, capacity, configuration and native approval enforcement                                                    | Separate provisioning and enablement                 |
-| Visual acceptance                | Reference captures, viewport set and agreed comparison criteria                                                                                                                                | PRs 3–5; release regression                          |
+| Visual acceptance                | PR 3 provisional viewport/walkthrough criteria agreed in section 3.1; usable reference captures and later 3D/visual-regression comparison criteria remain outstanding                          | PRs 3–5; release regression                          |
 | Assets and public content        | Inventory, publication rights, public links and historical-vs-current content approval                                                                                                         | Relevant PRs 3–7; release audit                      |
 | Rarity rules                     | Dataset provenance, ID bounds, exact scoring/ranking/formatting/layer rules and known-ID fixtures                                                                                              | PR 6                                                 |
 | Extras                           | Public command/document inventory, verified stream and sourced/dated treasury content                                                                                                          | PR 7                                                 |
