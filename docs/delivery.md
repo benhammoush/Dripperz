@@ -14,7 +14,9 @@ This is the PR 2 delivery contract, **not evidence of configured environments or
 
 ## Disabled until separately authorized setup
 
-The workflow makes **no delivery attempt** unless repository variable `DELIVERY_ENABLED` is exactly `true`. Production additionally requires `PRODUCTION_DELIVERY_ENABLED=true`. Keep both absent/false while drafting, publishing, or setting up. Do not enable delivery as an incidental part of merging PR 2. Enabling dev makes later successful main CI runs eligible to mutate dev.
+Each GitHub environment (`dev` and `production`) has its own `DEPLOY_ENABLED` variable. The controller makes **no provider request or deployment mutation** unless the selected environment's value is exactly `true`. Keep both absent/false while drafting, publishing, or setting up; do not define a repository/organization-wide fallback. Source selection and credential-free checks may run while deployment is disabled; the switch is checked inside the environment-bound delivery job, after native protection rules. Production also requires a new manual dispatch, native environment approval and the recovery prerequisites below. Do not enable deployment as an incidental part of merging. Enabling dev makes later successful main CI runs eligible to mutate dev, without enabling production; production never deploys automatically.
+
+The old repository-level delivery switches are no longer read. Migrating remote settings is separately authorized setup: configure each environment's `DEPLOY_ENABLED=false`, verify there is no same-name repository/organization fallback, then separately authorize dev activation. Do not copy an old shared enabled value into both environments.
 
 Provisioning, environment/secret configuration, workflow dispatch, deployment, publication and merging are separately authorized operations. An assistant implementing this milestone does not perform deployment or rollback mutations.
 
@@ -28,7 +30,7 @@ Provisioning, environment/secret configuration, workflow dispatch, deployment, p
 6. Put a distinct project-scoped `VERCEL_TOKEN` in each environment, never a repository-wide secret: dev's token is limited to `dripperz-dev`, production's to `dripperz-production`. Production needs no dev-verification credential: the owner reviews dev acceptance and recovery before native approval. Vercel project tokens grant project read/write access, not provider-enforced read-only access. Do not substitute team/full-account tokens. Choose explicit expirations and record rotation ownership without values. Use password-manager labels `<project>-<environment>-<provider>-<purpose>`, for example `dripperz-production-vercel-deploy`; GitHub still uses `VERCEL_TOKEN`. Create tokens through the owner's secure dashboard interaction. Inventory consumers before separately authorized obsolete-token cleanup; this source change does not revoke anything. No token values or credential paths belong in source, artifacts or evidence.
    No additional GitHub personal access token is required. Workflow source ancestry/freshness checks use the built-in read-only `GITHUB_TOKEN`; it is not used for administration readback. Keep the owner's broader CLI login local for authorized setup/readiness inspection; never copy it into Actions secrets as a substitute. The contract's policy validators support read-only setup checks, not automatic policy enforcement by the controller.
 7. Verify actual provider settings, Git trigger disconnection and native environment/approval enforcement; do not call a target operational because variables exist. Retain dated, non-secret main/environment policy evidence and recheck before authorizing enablement or promotion and after any policy/access change. Missing/uncertain evidence blocks authorization; if drift is discovered, keep delivery disabled pending separately authorized correction. Do not cancel an active mutation. The controller cannot enforce this operator prerequisite or detect weakened/deleted/recreated GitHub environments; native gates are only as strong as their current settings. Record each target independently as not configured, partial, configured-unverified, or operationally verified.
-8. Separately authorize dev enablement and a selected candidate run. Production stays disabled until acceptance/recovery and the first-production decision below are resolved.
+8. Separately authorize setting `DEPLOY_ENABLED=true` in `dev` and a selected dev candidate run. Keep production's variable absent/false until its own activation is separately authorized after acceptance/recovery prerequisites below are complete. For an empty production target, explicitly acknowledge the no-predecessor limitation before native approval; source selection does not prove dev acceptance or a completed rehearsal.
 
 ## Identity, concurrency and failure handling
 
@@ -56,7 +58,16 @@ Dispatch from `main`, target `production`, with the same full `sha` accepted in 
 
 ### First-production checkpoint
 
-An empty production project has no prior immutable production recovery identity. The current workflow intentionally rejects that case. **Do not invent a prior deployment or relax validation to get the first run through.** Before the first production deployment, separately approve and implement a bootstrap/recovery policy reflecting that there is no predecessor. That consequential release decision is outside PR 2; keep production disabled meanwhile. A configured dev target does not make production operational.
+An empty production project has no prior immutable production recovery identity. The approved policy is:
+
+1. Before first production, validate the exact dev candidate and rehearse dev rollback. Restore the selected candidate and repeat affected acceptance on its new deployment identity as described above.
+2. Explicitly accept and record that the first production deployment has no previous production version to restore. Do not invent a predecessor or describe this as verified production rollback capability.
+3. If first production fails, stop and inspect actual provider state, including any uncertain mutation. Recover only through a fresh, separately authorized dispatch with native production approval, deploying an exact dev-accepted revision. Revalidate affected acceptance if source or configuration changes. Never blindly retry, rerun production jobs or bypass approval.
+4. Retain the first accepted immutable production deployment and its source/version/configuration/acceptance evidence as the rollback candidate for later releases. Reverify its identity and suitability before using it; rollback remains separately authorized.
+
+The controller permits an absent production target under this policy, but rejects an existing target with a missing/malformed deployment ID and rejects target/configuration changes during preflight. Before mutation it records `productionBootstrap=true` and `priorDeploymentId=null` when no production target exists; failures retain that disclosure where possible. This is not proof that provider history is empty or that dev acceptance/rehearsal occurred: the owner must inspect actual state and evidence before native approval, including after any failed or uncertain attempt. Existing production targets record their prior ID without claiming it is an accepted rollback candidate.
+
+**Implementation does not authorize publication, enablement or deployment.** Native approval and all operator prerequisites remain mandatory. A configured dev target does not make production operational.
 
 ## Application rollback guidance
 

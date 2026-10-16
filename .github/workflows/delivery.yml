@@ -24,7 +24,6 @@ jobs:
   select:
     name: Resolve exact merged source
     if: >-
-      vars.DELIVERY_ENABLED == 'true' &&
       (github.event_name == 'workflow_dispatch' ||
        github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
@@ -121,8 +120,7 @@ jobs:
         run: node scripts/delivery.mjs deploy
         env:
           GH_TOKEN: ${{ github.token }}
-          DELIVERY_ENABLED: ${{ vars.DELIVERY_ENABLED }}
-          PRODUCTION_DELIVERY_ENABLED: ${{ vars.PRODUCTION_DELIVERY_ENABLED }}
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
           DELIVERY_REVISION: ${{ needs.select.outputs.revision }}
           DELIVERY_TARGET: ${{ needs.select.outputs.target }}
           DELIVERY_AUTOMATIC: ${{ needs.select.outputs.automatic }}
