@@ -27,7 +27,9 @@ test('manual navigation wraps and changes image, title and description together'
     CHARACTER_SLIDES[0]!.src,
   );
   fireEvent.click(screen.getByRole('button', { name: /Next/ }));
-  expect(screen.getByRole('heading', { name: '████' })).toBeInTheDocument();
+  expect(
+    screen.getByRole('heading', { name: 'Glitching signal' }),
+  ).toBeInTheDocument();
   expect(
     screen.getByText(CHARACTER_SLIDES[1]!.description),
   ).toBeInTheDocument();
@@ -65,11 +67,14 @@ test('a failed artwork leaves the caption and navigation usable', () => {
 test('autoplay stops in a hidden tab and releases its timer and subscriptions', () => {
   vi.useFakeTimers();
   let notify: IntersectionObserverCallback | undefined;
-  const disconnect = vi.fn();
+  const disconnects: ReturnType<typeof vi.fn>[] = [];
   vi.stubGlobal(
     'IntersectionObserver',
     vi.fn(function (callback: IntersectionObserverCallback) {
-      notify = callback;
+      // Keep the gallery observer; the selected glitch slide mounts its own decorations.
+      notify ??= callback;
+      const disconnect = vi.fn();
+      disconnects.push(disconnect);
       return { observe: vi.fn(), disconnect };
     }),
   );
@@ -102,13 +107,17 @@ test('autoplay stops in a hidden tab and releases its timer and subscriptions', 
     );
     vi.advanceTimersByTime(8000);
   });
-  expect(screen.getByRole('heading', { name: '████' })).toBeInTheDocument();
+  expect(
+    screen.getByRole('heading', { name: 'Glitching signal' }),
+  ).toBeInTheDocument();
   hidden.mockReturnValue(true);
   act(() => {
     document.dispatchEvent(new Event('visibilitychange'));
     vi.advanceTimersByTime(16000);
   });
-  expect(screen.getByRole('heading', { name: '████' })).toBeInTheDocument();
+  expect(
+    screen.getByRole('heading', { name: 'Glitching signal' }),
+  ).toBeInTheDocument();
   hidden.mockReturnValue(false);
   act(() => {
     document.dispatchEvent(new Event('visibilitychange'));
@@ -116,7 +125,8 @@ test('autoplay stops in a hidden tab and releases its timer and subscriptions', 
   });
   expect(screen.getByRole('heading', { name: 'C1V1L-X' })).toBeInTheDocument();
   unmount();
-  expect(disconnect).toHaveBeenCalledOnce();
+  for (const disconnect of disconnects)
+    expect(disconnect).toHaveBeenCalledOnce();
   expect(vi.getTimerCount()).toBe(0);
   expect(remove).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
   expect(media.removeEventListener).toHaveBeenCalledWith(

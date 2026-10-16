@@ -291,6 +291,51 @@ h2 {
 .collection-intro {
   max-width: 65ch;
 }
+/* Generated text is decoration: fixed-size boxes avoid caption layout shifts. */
+.scrambled-signal {
+  display: inline-block;
+  max-width: 100%;
+  width: 12ch;
+  height: 1.6em;
+  overflow: hidden;
+  vertical-align: bottom;
+  white-space: nowrap;
+  line-height: 1.6;
+}
+.scrambled-signal--multiline {
+  display: block;
+  width: 36ch;
+  height: 6.4em;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.scrambled-signal::after {
+  content: 'D7C4X01F9A2B8E6C/001X7DCC9A2F/84B1E0C7A5D9F2/01CC8B4A7D9E6F2/90X1A4C8D7E2F6/CC0B9D7A1E4F8';
+  animation: signal-scramble 1.6s steps(1, end) infinite;
+  animation-play-state: paused;
+}
+.scrambled-signal[data-active='true']::after {
+  animation-play-state: running;
+}
+.shell[data-paused='true'] .scrambled-signal::after {
+  animation-play-state: paused;
+}
+@keyframes signal-scramble {
+  25% {
+    content: 'X0F1D8A6C4B7E92D/94AC1DCC7B0F/28E4A9C0D7B1F6/84CC2A0B9D7E1F6/41X7E0D8C9A2B6/CC4F1A8D0B7E9';
+  }
+  50% {
+    content: 'C9A2D7F4B0E1X86C/27DE4DCC1A8B/96F0C2A7D4E1B8/70CC9E1D4A2F8B6/83X0B6C4E7D1A9/CC8D2F0B4A9E1';
+  }
+  75% {
+    content: 'F4E8B1C7D0A9X26F/81BF0DCC4E7A/07D9B3E1C8A4F2/26CC4D8A0E1B9F7/62X9C1A7F0D8E4/CC1E8B6A0F4D7';
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scrambled-signal::after {
+    animation: none;
+  }
+}
 .gallery {
   margin-top: 3rem;
   padding-top: 1rem;

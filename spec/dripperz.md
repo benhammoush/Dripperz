@@ -53,6 +53,7 @@ No new business promises, launch dates, adoption targets or Now/Next/Later prior
 - Verify navigation, galleries, FAQ and public links at mobile, tablet and desktop sizes.
 - Clearly distinguish historical milestones from current commitments. Do not invent new promises or publish sensitive legacy material.
 - PR 4 content decisions approved 2026-10-16: publication rights confirmed for the ten audited Phase 3 artwork files and optimized derivatives; use shared desktop collection order and the original character mapping, preserve lore redactions, label all seven cybermap stages as archived proposals without claiming completion, replace sales/wallet/ownership FAQ claims with showcase-focused answers, retain only the approved Dripperz X link, and omit personal footer attribution. See [core-showcase provenance and behavior](../docs/core-showcase.md). Galleries are manual by default with optional pausable autoplay; no delivery-limit increase is approved.
+- Owner clarification: the second character's running text was a decorative glitch, not redacted information. Restore cycling synthetic characters for that title/description, with stable accessible labels, reduced-motion/static fallback, pause control and hidden/offscreen suspension; do not invent an identity or claim that content was withheld.
 
 ### 3.3 3D hero
 

@@ -32,7 +32,7 @@ Owner visual acceptance of the derivatives is still required before publication.
 | `5_0000.png`      | `showcase-04.jpg`                      | Collection 4 / Collection study 04 |
 | `6_0000.png`      | `showcase-05.jpg`                      | Collection 5 / Collection study 05 |
 | `h2.png`          | `drip-x.jpg`                           | Character 1 / DRIP-X               |
-| `h1.png`          | `redacted.jpg`                         | Character 2 / redacted             |
+| `h1.png`          | `redacted.jpg`                         | Character 2 / decorative glitch    |
 | `h3.png`          | `civil-x.jpg`                          | Character 3 / C1V1L-X              |
 | `h4.png`          | `aim-x.jpg`                            | Character 4 / A1M-X                |
 | `h5.png`          | `lil-x.jpg`                            | Character 5 / L1L-X                |
@@ -40,8 +40,14 @@ Owner visual acceptance of the derivatives is still required before publication.
 Collection order follows the desktop reference; mobile originally used a
 different order, now intentionally unified in shared content. Character order and
 image/description mappings agree across both legacy variants. Lore is selected
-from public desktop Phase 3 descriptions; existing redactions stay redacted. The
-unnamed character has no invented identity or story. Collection-study numbers
+from public desktop Phase 3 descriptions; legacy masked lore tokens remain unchanged.
+The owner clarified that the second character's running characters simulated
+glitching, not redacted information. Its title and description use synthetic
+cycling glyphs with stable accessible labels, static reduced-motion fallback,
+visibility-aware playback and the existing Pause effects control. No invented
+identity or story is supplied. The existing derivative filename `redacted.jpg`
+is retained for URL compatibility, not as a description of the original effect.
+Collection-study numbers
 are display labels, not token IDs, ranks or assertions of collection supply.
 
 The derived assets total 1,113,452 bytes. The existing delivery controller still

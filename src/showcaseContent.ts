@@ -9,6 +9,7 @@ export interface GallerySlide {
   title: string;
   alt: string;
   description: string;
+  scrambled?: boolean;
 }
 
 export const COLLECTION_SLIDES: readonly GallerySlide[] = [
@@ -55,10 +56,10 @@ export const CHARACTER_SLIDES: readonly GallerySlide[] = [
   },
   {
     src: '/artwork/redacted.jpg',
-    title: '████',
+    title: 'Glitching signal',
     alt: 'Unnamed robotic character with a gold and pink reflective visor',
-    description:
-      'This character’s name and description were redacted in the original public showcase.',
+    description: 'Decorative glitching character signal.',
+    scrambled: true,
   },
   {
     src: '/artwork/civil-x.jpg',
