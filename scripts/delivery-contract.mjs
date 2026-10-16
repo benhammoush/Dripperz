@@ -5,7 +5,7 @@
 
 import { createHash } from 'node:crypto';
 
-export const REPOSITORY = 'benhammoush/Dripperz';
+export const REPOSITORY = 'benhammoush/dripperz';
 export const OWNER = 'benhammoush';
 export const TEAM = 'benhammoushs-projects';
 

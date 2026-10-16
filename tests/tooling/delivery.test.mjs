@@ -35,7 +35,7 @@ async function withController(scenario, run) {
   const originalCwd = process.cwd();
   const originalFetch = globalThis.fetch;
   const settings = {
-    GITHUB_REPOSITORY: 'benhammoush/Dripperz',
+    GITHUB_REPOSITORY: 'benhammoush/dripperz',
     GITHUB_REF: 'refs/heads/main',
     GH_TOKEN: 'synthetic-github',
     VERCEL_TOKEN: 'synthetic-vercel',
@@ -137,7 +137,7 @@ async function withController(scenario, run) {
           conclusion: 'success',
           event: 'push',
           head_branch: 'main',
-          head_repository: { full_name: 'benhammoush/Dripperz' },
+          head_repository: { full_name: 'benhammoush/dripperz' },
           path: '.github/workflows/ci.yml',
           head_sha: identity.revision,
         },
@@ -152,6 +152,7 @@ async function withController(scenario, run) {
       });
       let result;
       if (url.hostname === 'api.github.com') {
+        assert.ok(url.pathname.startsWith('/repos/benhammoush/dripperz/'));
         assert.equal(options.headers.Authorization, 'Bearer synthetic-github');
         if (url.pathname.endsWith('/branches/main')) {
           result = {
@@ -321,6 +322,7 @@ test('controller selects trusted successful main push CI with built-in authentic
       ['conclusion', 'failure'],
       ['head_branch', 'feature'],
       ['head_repository', { full_name: 'someone/Dripperz' }],
+      ['head_repository', { full_name: 'benhammoush/another-project' }],
     ]) {
       const invalid = structuredClone(event);
       invalid.workflow_run[key] = value;
@@ -328,6 +330,23 @@ test('controller selects trusted successful main push CI with built-in authentic
       await assert.rejects(select);
     }
   });
+});
+
+test('repository guards reject unrelated owners and projects before any API request', async () => {
+  for (const repository of [
+    'someone/dripperz',
+    'benhammoush/another-project',
+  ]) {
+    await withController('success', async ({ requests }) => {
+      process.env.GITHUB_REPOSITORY = repository;
+      await assert.rejects(select, /Unexpected repository/);
+      await assert.rejects(
+        deploy,
+        /Delivery controller must run from repository main/,
+      );
+      assert.equal(requests.length, 0);
+    });
+  }
 });
 
 test('manual selection uses the shared target and exact sha inputs', async () => {
