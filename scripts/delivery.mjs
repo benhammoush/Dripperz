@@ -268,7 +268,7 @@ export async function deploy() {
       env.GITHUB_REF === 'refs/heads/main',
     'Delivery controller must run from repository main',
   );
-  requireDelivery(env.DELIVERY_ENABLED === 'true', 'Delivery remains disabled');
+  requireDelivery(env.DEPLOY_ENABLED === 'true', 'Delivery remains disabled');
   const revision = sourceRevision(required('DELIVERY_REVISION'));
   const target = required('DELIVERY_TARGET');
   const name = projectName(target);
@@ -277,10 +277,6 @@ export async function deploy() {
       env.GITHUB_EVENT_NAME === 'workflow_dispatch' &&
         env.GITHUB_RUN_ATTEMPT === '1',
       'Production requires a new manual dispatch and native approval',
-    );
-    requireDelivery(
-      env.PRODUCTION_DELIVERY_ENABLED === 'true',
-      'Production remains disabled',
     );
   }
   // GitHub enforces the job's native environment gate before this controller
@@ -321,12 +317,19 @@ export async function deploy() {
   );
   // Dev acceptance and recovery are reviewed by the owner before native approval.
   // Production never receives a dev credential or automatically reads dev resources.
+  const priorDeploymentId = project.targets?.production?.id ?? null;
   if (target === 'production') {
     requireDelivery(
-      /^dpl_[a-zA-Z0-9]+$/.test(project.targets?.production?.id ?? ''),
-      'First production requires a separately agreed bootstrap/recovery policy',
+      project.targets?.production == null ||
+        /^dpl_[a-zA-Z0-9]+$/.test(priorDeploymentId ?? ''),
+      'Existing production target has no valid deployment identity; inspect provider',
     );
   }
+  // The approved bootstrap policy permits no predecessor, not fabricated rollback
+  // evidence. Dev acceptance/rehearsal and this limitation are owner-reviewed
+  // before native approval; the controller never infers them from a source SHA.
+  const productionBootstrap =
+    target === 'production' && priorDeploymentId === null;
   const upload = [];
   for (const path of await files('dist')) {
     upload.push({
@@ -378,6 +381,9 @@ export async function deploy() {
       teamId,
       projectId,
     ) === configDigest &&
+      (target !== 'production' ||
+        latestProject.targets?.production == null ||
+        /^dpl_[a-zA-Z0-9]+$/.test(latestProject.targets.production.id ?? '')) &&
       latestProject.targets?.production?.id === project.targets?.production?.id,
     'Target configuration or recovery identity changed during preflight',
   );
@@ -386,7 +392,8 @@ export async function deploy() {
     configDigest,
     teamId,
     projectId,
-    priorDeploymentId: project.targets?.production?.id ?? null,
+    priorDeploymentId,
+    productionBootstrap,
     startedAt: new Date().toISOString(),
     status: 'mutation-requested',
   };
@@ -432,7 +439,7 @@ export async function deploy() {
   );
   await appendFile(
     required('GITHUB_STEP_SUMMARY'),
-    `## ${target} delivery\n\nSource: \`${revision}\`\nVersion: \`${identity.version}\`\nDeployment: \`${deployment.id}\`\nURL: ${record.url}\n\nAutomated identity smoke passed; user acceptance/recovery remain separate.\n`,
+    `## ${target} delivery\n\nSource: \`${revision}\`\nVersion: \`${identity.version}\`\nDeployment: \`${deployment.id}\`\nURL: ${record.url}\n\n${productionBootstrap ? 'Production bootstrap: no prior production restore identity was available at preflight. Retain this deployment as a future rollback candidate only after user acceptance.\n\n' : ''}Automated identity smoke passed; user acceptance/recovery remain separate.\n`,
   );
 }
 

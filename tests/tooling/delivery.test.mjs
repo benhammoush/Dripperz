@@ -28,8 +28,7 @@ import {
  * @param run - Assertion callback receiving captured requests and fixture paths.
  */
 async function withController(scenario, run) {
-  const production =
-    scenario.startsWith('production-') && scenario !== 'production-disabled';
+  const production = scenario.startsWith('production-');
   const root =
     process.platform === 'win32' ? join(tmpdir(), 'opencode') : tmpdir();
   const directory = await mkdtemp(join(root, 'dripperz-delivery-test-'));
@@ -40,8 +39,7 @@ async function withController(scenario, run) {
     GITHUB_REF: 'refs/heads/main',
     GH_TOKEN: 'synthetic-github',
     VERCEL_TOKEN: 'synthetic-vercel',
-    DELIVERY_ENABLED: 'true',
-    PRODUCTION_DELIVERY_ENABLED: production ? 'true' : 'false',
+    DEPLOY_ENABLED: 'true',
     DELIVERY_REVISION: 'a'.repeat(40),
     DELIVERY_TARGET: production ? 'production' : 'dev',
     DELIVERY_AUTOMATIC: production ? 'false' : 'true',
@@ -195,11 +193,24 @@ async function withController(scenario, run) {
         } else if (url.pathname === '/v9/projects/prj_production/domains')
           result = productionFixture.domains;
         else if (url.pathname === '/v9/projects/prj_production') {
+          projectReads++;
           result = {
             ...productionFixture.project,
             targets: { production: { id: created?.id ?? 'dpl_prior' } },
           };
-          if (scenario === 'production-empty') delete result.targets;
+          if (scenario.startsWith('production-empty') && !created)
+            delete result.targets;
+          if (scenario === 'production-empty-drift' && projectReads > 1)
+            result.targets = { production: { id: 'dpl_changed' } };
+          if (
+            scenario === 'production-empty-malformed-drift' &&
+            projectReads > 1
+          )
+            result.targets = { production: {} };
+          if (scenario === 'production-invalid-prior')
+            result.targets.production.id = 'invalid';
+          if (scenario === 'production-missing-prior-id')
+            result.targets.production = {};
         } else if (url.pathname.startsWith('/v13/deployments/')) {
           result = structuredClone(existing[url.pathname.split('/').at(-1)]);
           if (
@@ -221,7 +232,10 @@ async function withController(scenario, run) {
           url.pathname === '/v13/deployments' &&
           options.method === 'POST'
         ) {
-          if (scenario === 'ambiguous-post')
+          if (
+            scenario === 'ambiguous-post' ||
+            scenario === 'production-empty-ambiguous-post'
+          )
             throw new Error('Synthetic lost deployment response');
           created = {
             id: 'dpl_created',
@@ -249,7 +263,10 @@ async function withController(scenario, run) {
           'dpl-prior.vercel.app',
         ].includes(url.hostname)
       ) {
-        if (scenario === 'smoke-failure')
+        if (
+          scenario === 'smoke-failure' ||
+          scenario === 'production-empty-smoke-failure'
+        )
           return new Response('Unavailable', { status: 503 });
         const hostedIdentity =
           url.hostname === 'dpl-candidate.vercel.app' ||
@@ -339,6 +356,8 @@ test('controller rejects stale automatic, unmerged, drifted, tampered and disabl
     'drift',
     'tampered',
     'disabled',
+    'missing-enable',
+    'production-missing-enable',
     'missing-config',
     'missing-github',
     'production-disabled',
@@ -346,30 +365,37 @@ test('controller rejects stale automatic, unmerged, drifted, tampered and disabl
     await withController(scenario, async ({ requests }) => {
       if (scenario === 'tampered')
         await writeFile('dist/index.html', 'tampered');
-      if (scenario === 'disabled') process.env.DELIVERY_ENABLED = 'false';
+      if (scenario === 'disabled' || scenario === 'production-disabled')
+        process.env.DEPLOY_ENABLED = 'false';
+      if (scenario.endsWith('missing-enable'))
+        delete process.env.DEPLOY_ENABLED;
       if (scenario === 'missing-config')
         delete process.env.VERCEL_DEV_PROJECT_ID;
       if (scenario === 'missing-github') delete process.env.GH_TOKEN;
-      if (scenario === 'production-disabled') {
-        process.env.GITHUB_EVENT_NAME = 'workflow_dispatch';
-        process.env.DELIVERY_TARGET = 'production';
-        const identity = JSON.parse(
-          await readFile('dist/delivery.json', 'utf8'),
-        );
-        identity.target = 'production';
-        await writeFile('dist/delivery.json', JSON.stringify(identity));
-      }
       const expected = {
         superseded: /superseded/,
         unmerged: /not an ancestor/,
         drift: /static project settings/,
         tampered: /bundle identity or content mismatch/,
         disabled: /Delivery remains disabled/,
+        'missing-enable': /Delivery remains disabled/,
+        'production-missing-enable': /Delivery remains disabled/,
         'missing-config': /Missing VERCEL_DEV_PROJECT_ID/,
         'missing-github': /Missing GH_TOKEN/,
-        'production-disabled': /Production remains disabled/,
+        'production-disabled': /Delivery remains disabled/,
       };
       await assert.rejects(deploy, expected[scenario]);
+      if (
+        [
+          'disabled',
+          'production-disabled',
+          'missing-enable',
+          'production-missing-enable',
+        ].includes(scenario)
+      )
+        assert.ok(
+          requests.every((request) => !request.url.includes('api.vercel.com')),
+        );
       assert.equal(
         requests.filter((request) => request.method === 'POST').length,
         0,
@@ -454,6 +480,7 @@ test('production uses only its target credential; acceptance and recovery are ow
         await readFile(join(directory, 'delivery-record.json'), 'utf8'),
       );
       assert.equal(record.priorDeploymentId, 'dpl_prior');
+      assert.equal(record.productionBootstrap, false);
       assert.equal(record.promotion, undefined);
       assert.ok(
         requests.every((request) => !request.url.includes('/projects/prj_dev')),
@@ -462,9 +489,32 @@ test('production uses only its target credential; acceptance and recovery are ow
   );
 });
 
-test('production rejects empty bootstrap, reruns and non-dispatch execution before POST', async () => {
+test('first production records no predecessor without claiming user acceptance or rollback capability', async () => {
+  await withController('production-empty', async ({ requests, directory }) => {
+    await deploy();
+    assert.equal(
+      requests.filter((request) => request.method === 'POST').length,
+      1,
+    );
+    const record = JSON.parse(
+      await readFile(join(directory, 'delivery-record.json'), 'utf8'),
+    );
+    assert.equal(record.priorDeploymentId, null);
+    assert.equal(record.productionBootstrap, true);
+    assert.equal(record.status, 'smoke-verified-not-user-accepted');
+    assert.match(
+      await readFile(join(directory, 'summary.md'), 'utf8'),
+      /no prior production restore identity was available at preflight/,
+    );
+  });
+});
+
+test('production rejects malformed prior identity, bootstrap drift, reruns and non-dispatch execution before POST', async () => {
   for (const scenario of [
-    'production-empty',
+    'production-invalid-prior',
+    'production-missing-prior-id',
+    'production-empty-drift',
+    'production-empty-malformed-drift',
     'production-rerun',
     'production-push',
   ]) {
@@ -473,7 +523,10 @@ test('production rejects empty bootstrap, reruns and non-dispatch execution befo
       if (scenario === 'production-push')
         process.env.GITHUB_EVENT_NAME = 'push';
       const expected = {
-        'production-empty': /bootstrap\/recovery policy/,
+        'production-invalid-prior': /no valid deployment identity/,
+        'production-missing-prior-id': /no valid deployment identity/,
+        'production-empty-drift': /recovery identity changed/,
+        'production-empty-malformed-drift': /recovery identity changed/,
         'production-rerun': /new manual dispatch/,
         'production-push': /new manual dispatch/,
       };
@@ -488,7 +541,12 @@ test('production rejects empty bootstrap, reruns and non-dispatch execution befo
 });
 
 test('ambiguous mutation and failed smoke never trigger retries or automatic rollback', async () => {
-  for (const scenario of ['ambiguous-post', 'smoke-failure']) {
+  for (const scenario of [
+    'ambiguous-post',
+    'smoke-failure',
+    'production-empty-ambiguous-post',
+    'production-empty-smoke-failure',
+  ]) {
     await withController(scenario, async ({ requests, directory }) => {
       await assert.rejects(deploy);
       assert.equal(
@@ -500,10 +558,14 @@ test('ambiguous mutation and failed smoke never trigger retries or automatic rol
       );
       assert.equal(
         record.status,
-        scenario === 'ambiguous-post'
+        scenario.endsWith('ambiguous-post')
           ? 'mutation-requested'
           : 'verification-pending',
       );
+      if (scenario.startsWith('production-empty')) {
+        assert.equal(record.priorDeploymentId, null);
+        assert.equal(record.productionBootstrap, true);
+      }
     });
   }
 });
@@ -738,4 +800,10 @@ test('workflow keeps native production gating without a custom promotion manifes
   assert.ok(workflow.includes('name: ${{ needs.select.outputs.target }}'));
   assert.ok(!workflow.includes('VERCEL_DEV_VERIFICATION_TOKEN'));
   assert.ok(!workflow.includes('PROMOTION_EVIDENCE'));
+  assert.ok(!workflow.includes('DELIVERY_ENABLED'));
+  assert.ok(workflow.includes('DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}'));
+  // Environment variables are available only inside the selected target job,
+  // never in the source-selection job's condition or credential-free checks.
+  const beforeDeliver = workflow.slice(0, workflow.indexOf('\n  deliver:'));
+  assert.ok(!beforeDeliver.includes('DEPLOY_ENABLED'));
 });
