@@ -1,5 +1,5 @@
 /**
- * Check the foundation's public status and version without a browser server.
+ * Check the shell's semantic targets and explicit deferred-feature status.
  * @packageDocumentation
  */
 
@@ -8,11 +8,11 @@ import { expect, test } from 'vitest';
 import { App } from '../../src/App';
 import { APP_VERSION } from '../../src/appVersion';
 
-test('renders the foundation and runtime version', () => {
+test('renders the shell and runtime version without claiming feature completion', () => {
   render(<App />);
   expect(
-    screen.getByRole('heading', { level: 1, name: 'Dripperz' }),
+    screen.getByRole('heading', { level: 1, name: /Dripperz.*ENTER THE/ }),
   ).toBeInTheDocument();
   expect(screen.getByTestId('app-version')).toHaveTextContent(APP_VERSION);
-  expect(screen.getByText(/not yet implemented/)).toBeInTheDocument();
+  expect(screen.getAllByText('Not yet implemented')).toHaveLength(5);
 });
