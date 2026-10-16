@@ -126,7 +126,16 @@ test('optional autoplay pauses for hover, focus, reduced motion and offscreen', 
   await page.clock.runFor(6000);
   await expect(title).toHaveText('Collection study 02');
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  // Media emulation reaches WebKit asynchronously; observe it before ticking timers.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => matchMedia('(prefers-reduced-motion: reduce)').matches,
+      ),
+    )
+    .toBe(true);
   await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+  await expect(gallery).toHaveAttribute('data-playing', 'false');
   await page.clock.runFor(6000);
   await expect(title).toHaveText('Collection study 02');
   await page.locator('#faq').scrollIntoViewIfNeeded();

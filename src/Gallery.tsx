@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { GallerySlide } from './showcaseContent';
+import { ScrambledSignal } from './ScrambledSignal';
 
 /** Configuration for one independently controlled, nonempty local gallery. */
 interface GalleryProps {
@@ -156,8 +157,20 @@ export function Gallery(props: GalleryProps) {
               ? 'Fictional character archive'
               : 'Original collection artwork'}
           </p>
-          <h4>{slide.title}</h4>
-          <p>{slide.description}</p>
+          <h4>
+            {slide.scrambled ? (
+              <ScrambledSignal label={slide.title} />
+            ) : (
+              slide.title
+            )}
+          </h4>
+          <p>
+            {slide.scrambled ? (
+              <ScrambledSignal label={slide.description} multiline />
+            ) : (
+              slide.description
+            )}
+          </p>
         </figcaption>
       </figure>
       <div className="gallery-controls">
