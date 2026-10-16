@@ -1,5 +1,5 @@
 /**
- * Shared navigation and honest placeholders for later Phase 3 milestones.
+ * Shared navigation and honest descriptions of current and deferred Phase 3 sections.
  * @packageDocumentation
  */
 
@@ -9,14 +9,14 @@ export const SECTIONS = [
     label: 'Cyberclub',
     title: 'The collection',
     detail:
-      'Collection artwork and synchronized galleries follow in the core showcase milestone.',
+      'Original collection artwork and fictional characters from Phase 3.',
   },
   {
     id: 'cybermap',
     label: 'Cybermap',
     title: 'Cybermap',
     detail:
-      'The historical timeline follows after content review. No new commitments are announced here.',
+      'The original roadmap is archived as historical proposals, not current commitments.',
   },
   {
     id: 'treasury',
@@ -37,6 +37,6 @@ export const SECTIONS = [
     label: 'FAQ',
     title: 'Frequently asked questions',
     detail:
-      'Reviewed questions and answers follow in the core showcase milestone.',
+      'Answers about this historical showcase and its local-only interactions.',
   },
 ] as const;
